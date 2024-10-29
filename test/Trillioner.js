@@ -218,3 +218,76 @@ describe("Transfer With Vesting Function", function () {
     expect(lockDetails.lockedToken).to.equal(amount);
   });
 });
+
+describe("Unlock Function", function () {
+  async function deployTokenFixture() {
+    const [owner, addr1] = await ethers.getSigners();
+    const trillionerToken = await ethers.deployContract("Trillioner");
+    const amount = ethers.parseUnits("100", 18);
+
+    await trillionerToken.transferWithVesting(addr1.address, amount, 30, 10);
+
+    return { owner, addr1, amount, trillionerToken };
+  }
+
+  it("Should Unlock tokens successfully after the unlocking period", async function () {
+    const { owner, addr1, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await ethers.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+
+    const lockDetails = await trillionerToken.locks(addr1.address);
+    expect(lockDetails.remainingLockedToken).to.equal(amount);
+  });
+
+  it("Should fail to unlock tokens if the target address is the zero address", async function () {
+    const { trillionerToken } = await loadFixture(deployTokenFixture);
+    const zeroAddress = "0x0000000000000000000000000000000000000000";
+    await expect(trillionerToken.unlock(zeroAddress)).to.be.revertedWith(
+      "Target address can not be zero address"
+    );
+  });
+
+  it("Should fail to unlock if the unlocking period is not opened", async function () {
+    const { owner, addr1, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+    await expect(trillionerToken.unlock(addr1.address)).to.be.revertedWith(
+      "UnLocking period is not opened"
+    );
+  });
+
+  it("Should fail to unlock if no tokens are available for release", async function () {
+    const { owner, addr1, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await ethers.provider.send("evm_increaseTime", [31 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+
+    await trillionerToken.unlock(addr1.address);
+
+    await expect(trillionerToken.unlock(addr1.address)).to.be.revertedWith(
+      "Releasable token till now is released"
+    );
+  });
+
+  it("Should fail to unlock if all tokens are already unlocked", async function () {
+    const { addr1, owner, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await ethers.provider.send("evm_increaseTime", [60 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine");
+
+    await trillionerToken.unlock(addr1.address);
+
+    trillionerToken.connect(addr1).transfer(owner, amount);
+
+    expect(trillionerToken.unlock(addr1.address)).to.be.revertedWith(
+      "All tokens are unlocked"
+    );
+  });
+});

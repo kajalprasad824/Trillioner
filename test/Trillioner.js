@@ -291,3 +291,130 @@ describe("Unlock Function", function () {
     );
   });
 });
+
+describe("Mint Function", function () {
+  async function deployTokenFixture() {
+    const [owner, addr1] = await ethers.getSigners();
+    const trillionerToken = await ethers.deployContract("Trillioner");
+
+    const amount = ethers.parseUnits("100", 18);
+
+    return { owner, amount, addr1, trillionerToken };
+  }
+
+  it("Should allow only the owner to mint tokens", async function () {
+    const { addr1, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await trillionerToken.burn(amount);
+
+    await expect(
+      trillionerToken.connect(addr1).mint(amount)
+    ).to.be.revertedWith("Ownable: caller is not the owner");
+
+    await trillionerToken.burn(amount);
+
+    // Mint as owner
+    await expect(trillionerToken.mint(amount)).to.emit(
+      trillionerToken,
+      "Transfer"
+    );
+  });
+
+  it("Should revert if trying to mint when paused", async function () {
+    const { amount, trillionerToken } = await loadFixture(deployTokenFixture);
+
+    await trillionerToken.pause();
+
+    expect(trillionerToken.mint(amount)).to.be.revertedWithCustomError;
+  });
+
+  it("Should revert if minting exceeds the cap", async function () {
+    const { amount, trillionerToken } = await loadFixture(deployTokenFixture);
+
+    expect(trillionerToken.mint(amount)).to.be.revertedWith(
+      "ERC20Capped: cap exceeded"
+    );
+  });
+
+  it("Should update total supply correctly after minting", async function () {
+    const { amount, trillionerToken } = await loadFixture(deployTokenFixture);
+
+    await trillionerToken.burn(amount);
+    const initialSupply = await trillionerToken.totalSupply();
+
+    await trillionerToken.mint(amount);
+    const targetSupply = initialSupply + amount;
+
+    const totalSupply = await trillionerToken.totalSupply();
+    expect(totalSupply).to.equal(targetSupply);
+  });
+});
+
+describe("Burn Function", function () {
+  async function deployTokenFixture() {
+    const [owner, addr1] = await ethers.getSigners();
+    const trillionerToken = await ethers.deployContract("Trillioner");
+
+    const amount = ethers.parseUnits("100", 18);
+
+    return { owner, amount, addr1, trillionerToken };
+  }
+
+  it("Should allow only the owner to burn tokens", async function () {
+    const { owner, addr1, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await expect(
+      trillionerToken.connect(addr1).burn(amount)
+    ).to.be.revertedWith("Ownable: caller is not the owner");
+
+    await expect(trillionerToken.connect(owner).burn(amount)).to.emit(
+      trillionerToken,
+      "Transfer"
+    );
+  });
+
+  it("Should revert if trying to burn when paused", async function () {
+    const { owner, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await trillionerToken.pause();
+
+    expect(
+      trillionerToken.connect(owner).burn(amount)
+    ).to.be.revertedWithCustomError;
+  });
+
+  it("Should revert if burning amount exceeds balance", async function () {
+    const { owner, addr1, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    await trillionerToken.transfer(addr1,amount);
+
+    const burnAmount = await trillionerToken.totalSupply();
+
+    expect(
+      trillionerToken.connect(owner).burn(burnAmount)
+    ).to.be.revertedWith("ERC20: burn amount exceeds balance");
+  });
+
+  it("Should correctly reduce total supply after burning", async function () {
+    const { owner, addr1, amount, trillionerToken } = await loadFixture(
+      deployTokenFixture
+    );
+
+    const initialSupply = await trillionerToken.totalSupply();
+
+    await trillionerToken.burn(amount);
+    const expectedSupply = initialSupply - amount;
+
+    const totalSupply = await trillionerToken.totalSupply();
+
+    expect(totalSupply).to.be.equal(expectedSupply);
+  });
+});
